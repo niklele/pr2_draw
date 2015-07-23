@@ -1,0 +1,17 @@
+<package>
+  <description brief="pr2_draw">
+
+     pr2_draw
+
+  </description>
+  <author>Nikhil Lele</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <!-- <url>http://ros.org/wiki/pr2_draw</url> -->
+  <depend package="ee_cart_imped_action"/>
+  <depend package="ee_cart_imped_msgs"/>
+  <depend package="roscpp"/>
+  <depend package="std_msgs"/>
+  <depend package="rospy"/>
+
+</package>
