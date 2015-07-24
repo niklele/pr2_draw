@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.4.6)
 include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 
+project(PR2_DRAW)
+
 # Set the build type.  Options are:
 #  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
 #  Debug          : w/ debug symbols, w/o optimization
@@ -31,3 +33,9 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
 rosbuild_add_executable(stiffness_control_cpp src/stiffness_control.cpp)
 rosbuild_add_executable(force_control_cpp src/force_control.cpp)
+
+set(GRIPPER_SRC
+    src/gripper.cpp
+    src/gripper.h
+ )
+rosbuild_add_executable(gripper ${GRIPPER_SRC})
