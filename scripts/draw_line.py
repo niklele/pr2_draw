@@ -2,20 +2,22 @@
 import roslib; roslib.load_manifest('pr2_draw')
 import rospy
 
-import stiffness_control as sc
+import draw_control as dc
 
 if __name__ == '__main__':
     rospy.init_node('draw_line')
 
-    arm_control = sc.StiffnessController('right_arm')
+    draw_control = dc.DrawController('right_arm', True) # stiffness
 
-    """WARNING: use r_setup first!"""
-    arm_control.home()
+    orientation = draw_control.home_orientation
 
-    arm_control.move((0.79,0,0), 200)
-    arm_control.move((0.79,0,-0.1), 100)
-    arm_control.move((0.75,0,-0.1), 100)
+    """WARNING: use setup first!"""
+    draw_control.home()
 
-    arm_control.home()
+    draw_control.move((0.79,0,0), orientation, 200)
+    draw_control.move((0.79,0,-0.1), orientation, 100)
+    draw_control.move((0.75,0,-0.1), orientation, 100)
 
-    arm_control.sendGoal()
+    draw_control.home()
+
+    draw_control.sendGoal()
