@@ -108,7 +108,7 @@ def make_line(start_pos, length):
 
 if __name__ == '__main__':
     rospy.init_node('draw')
-    draw_control = dc.DrawController('right_arm')
+    draw_control = dc.DrawController()
 
     start_offset = np.array([0.01, 0, 0]) # offset in /r_gripper_tool_frame
 
@@ -126,10 +126,10 @@ if __name__ == '__main__':
     line_orientations_interp = interpolate(line_orientations, 0.01) # 1 cm max step
 
     # Send the path
-    draw_control.home()
-    draw_control.send_path(line_orientations_interp, 100)
-    draw_control.home()
+    draw_control.add_home_goal()
+    draw_control.add_path_goals(line_orientations_interp, 100)
+    draw_control.add_home_goal()
     rospy.loginfo("Sending Goal Trajectory")
-    draw_control.sendGoal()
+    draw_control.send()
 
     rospy.spin()

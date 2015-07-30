@@ -12,63 +12,60 @@ MAX_LIN_FORCE = 10
 MAX_ROT_STIFFNESS = 30
 
 class DrawController(object):
-    """contains helper functions for ee_cart_imped_action"""
-    def __init__(self, arm='right_arm'):
+    """contains helper functions for ee_cart_imped_action using right arm"""
+    def __init__(self):
         super(DrawController, self).__init__()
-        self.arm = arm
         self.control = ee_cart_imped_action.EECartImpedClient('right_arm')
-
         self.tf_echo_sub = rospy.Subscriber("/tf_echo/torso_lift_link/r_gripper_tool_frame", geometry_msgs.msg.Transform, self.tf_echo_cb)
+
         self.curr_pos = []
         self.curr_orientation = []
+        self.t = 5 # trajectory time starts ahead for a safety delay
 
-        self.home_pos = [0.75,0,0]
+        self.last_pos_cmd = self.home_pos
+        self.last_orientation_cmd = [0,0,0,1]
+        self.last_t = 0 # ensure that time stamps move forward
+
+        self.home_pos = [0.75, 0, 0] # in /torso_lift_link
         self.home_orientation = tf.transformations.quaternion_from_euler(0, -np.pi/6, 0) # roll, pitch, yaw
-
-        # ensure that time stamps move forward
-        self.last_t = 0
 
         self.vel = 0.015 # not actual velocity because it is based on commanded position, not actual
         self.rot_vel = np.pi/2 # radians/s
-
-        self.t = 5 # trajectory time starts ahead for a safety delay
-        self.last_pos_cmd = self.home_pos
-        self.last_orientation_cmd = [0,0,0,1]
-
-    def send_path(self, path, stiffness):
-        """send a path specified as a list of [position, orientation] with a given stiffness"""
-        for position, orientation in path:
-            self.move(position, orientation, stiffness)
 
     def tf_echo_cb(self, data):
         """callback from tf_echo_sub sets current position and orientation"""
         self.curr_pos = [data.translation.x, data.translation.y, data.translation.z]
         self.curr_orientation = [data.rotation.x, data.rotation.y, data.rotation.z, data.rotation.w]
 
-    def move(self, pos, orientation, fx):
-        """add a goal to move to the position and orientation with force/stiffness fx in x-axis
+    def add_path_goals(self, path, stiffness):
+        """send a path specified as a list of [position, orientation] with a given stiffness"""
+        for position, orientation in path:
+            self.move(position, orientation, stiffness)
+
+    def add_move_goal(self, pos, orientation, sx=MAX_LIN_STIFFNESS):
+        """add a goal to move to the position and orientation with stiffness sx in x-axis
         pos: position x,y,z in /torso_lift_link frame
         orientation: ox,oy,oz,ow in /torso_lift_link frame
         """
 
         # calc time to travel based on spatial and rotational velocity
-        dt_pos = la.norm(np.array(pos) - np.array(self.last_pos_cmd)) / self.vel
-        dt_rot = 2 * np.arccos(np.dot(self.last_orientation_cmd, orientation)) / self.rot_vel
+        dt_translate = la.norm(np.array(pos) - np.array(self.last_pos_cmd)) / self.vel
+        dt_rotate = 2 * np.arccos(np.dot(self.last_orientation_cmd, orientation)) / self.rot_vel
 
-        dt += max(dt_pos, dt_ros) + 0.1 # add 100 ms delay to all commands
+        dt += max(dt_translate, dt_rotate) + 0.1 # add 100 ms delay to all commands
 
         # add a goal
-        self.add_goal(pos,
-                      [fx, MAX_LIN_STIFFNESS, MAX_LIN_STIFFNESS],
-                      orientation,
-                      self.t + dt)
+        self.add_stiff_goal(pos,
+                            [sx, MAX_LIN_STIFFNESS, MAX_LIN_STIFFNESS],
+                            orientation,
+                            self.t + dt)
 
         # advance state
         self.last_pos_cmd = pos
         self.last_orientation_cmd = orientation
         self.t += dt
 
-    def loiter(self, time):
+    def add_loiter_goal(self, time):
         """add a goal to stay at the last command for a certain amount of time"""
         self.add_goal(self.last_pos_cmd,
                       [100, MAX_LIN_STIFFNESS, MAX_LIN_STIFFNESS],
@@ -76,12 +73,11 @@ class DrawController(object):
                       self.t + time)
         self.t += time
 
-
-    def home(self):
+    def add_home_goal(self):
         """add goal to home near whiteboard"""
         self.move(self.home_pos, [0,0,0,1], 50)
 
-    def sendGoal(self):
+    def send(self):
         """wrap ee_cart_imped_action sendGoal"""
         self.control.sendGoal()
 
