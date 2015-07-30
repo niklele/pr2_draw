@@ -7,7 +7,7 @@ import draw_control as dc
 if __name__ == '__main__':
     rospy.init_node('draw_line')
 
-    draw_control = dc.DrawController('right_arm', True) # stiffness
+    draw_control = dc.DrawController('right_arm')
 
     orientation = draw_control.home_orientation
 

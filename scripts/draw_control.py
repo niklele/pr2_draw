@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 import roslib; roslib.load_manifest('pr2_draw')
 import rospy
-# from tf.transformations import quaternion_from_euler as quaternion
-import tf
 import geometry_msgs
 import ee_cart_imped_action
 
@@ -10,19 +8,19 @@ import numpy as np
 import numpy.linalg as la
 
 MAX_LIN_STIFFNESS = 1000
+MAX_LIN_FORCE = 10
 MAX_ROT_STIFFNESS = 30
 
 class DrawController(object):
     """contains helper functions for ee_cart_imped_action"""
-    def __init__(self, stiffness_control, arm='right_arm'):
+    def __init__(self, arm='right_arm'):
         super(DrawController, self).__init__()
-        self.stiffness_control = stiffness_control
         self.arm = arm
         self.control = ee_cart_imped_action.EECartImpedClient('right_arm')
-        self.tf_listener = tf.TransformListener()
 
         self.tf_echo_sub = rospy.Subscriber("/tf_echo/torso_lift_link/r_gripper_tool_frame", geometry_msgs.msg.Transform, self.tf_echo_cb)
         self.curr_pos = []
+        self.curr_orientation = []
 
         self.home_pos = [0.75,0,0]
         self.home_orientation = tf.transformations.quaternion_from_euler(0, -np.pi/6, 0) # roll, pitch, yaw
@@ -31,29 +29,21 @@ class DrawController(object):
         self.last_t = 0
 
         self.vel = 0.015 # not actual velocity because it is based on commanded position, not actual
+        self.rot_vel = np.pi/2 # radians/s
+
         self.t = 5 # trajectory time starts ahead for a safety delay
         self.last_pos_cmd = self.home_pos
         self.last_orientation_cmd = [0,0,0,1]
 
-    def tf_echo_cb(self, data):
-        self.curr_pos = [data.translation.x, data.translation.y, data.translation.z]
+    def send_path(self, path, stiffness):
+        """send a path specified as a list of [position, orientation] with a given stiffness"""
+        for position, orientation in path:
+            self.move(position, orientation, stiffness)
 
-    # def curr_pos(self):
-    #     """
-    #     use tf to get current position of gripper in /torso_lift_link frame.
-    #     does not return orientation
-    #     """
-    #
-    #     TF method
-    #     while(True):
-    #         try:
-    #             # TODO check order
-    #             position, orientation = self.tf_listener.lookupTransform('/torso_lift_link',
-    #                                                                      '/r_gripper_tool_frame', rospy.Time(0))
-    #             return position
-    #         except Exception as e:
-    #             # raise(Exception("tf error in curr_pos: " + str(e)))
-    #             rospy.logwarn("tf error in curr_pos: " + str(e))
+    def tf_echo_cb(self, data):
+        """callback from tf_echo_sub sets current position and orientation"""
+        self.curr_pos = [data.translation.x, data.translation.y, data.translation.z]
+        self.curr_orientation = [data.rotation.x, data.rotation.y, data.rotation.z, data.rotation.w]
 
     def move(self, pos, orientation, fx):
         """add a goal to move to the position and orientation with force/stiffness fx in x-axis
@@ -61,10 +51,11 @@ class DrawController(object):
         orientation: ox,oy,oz,ow in /torso_lift_link frame
         """
 
-        # calc time to travel based on velocity
-        dt = la.norm(np.array(pos) - np.array(self.last_pos_cmd)) / self.vel
+        # calc time to travel based on spatial and rotational velocity
+        dt_pos = la.norm(np.array(pos) - np.array(self.last_pos_cmd)) / self.vel
+        dt_rot = 2 * np.arccos(np.dot(self.last_orientation_cmd, orientation)) / self.rot_vel
 
-        dt += 0.001 # add small amount
+        dt += max(dt_pos, dt_ros) + 0.1 # add 100 ms delay to all commands
 
         # add a goal
         self.add_goal(pos,
@@ -94,38 +85,60 @@ class DrawController(object):
         """wrap ee_cart_imped_action sendGoal"""
         self.control.sendGoal()
 
-    def add_goal(self, pt, force, orientation, t):
+    def add_goal(self, pt, stiffness, orientation, t):
+        return self.add_stiff_goal(pt, stiffness=, orientation, t)
+
+    def add_stiff_goal(self, pt, stiffness, orientation, t):
+        """
+        pt: set point x,y,z in /torso_lift_link frame
+        stiffness: stiffness in x,y,z
+        orientation: set orientation ox,oy,oz,ow in /torso_lift_link frame
+        t: goal time
+        """
+
+        x, y, z = pt
+        ox, oy, oz, ow = orientation
+        sx, sy, sz = stiffness
+
+        if t <= self.last_t:
+            raise Exception('time ({0}) must be later than the last time ({1}) in the trajectory'.format(t, self.last_t))
+        elif (sx > MAX_LIN_STIFFNESS) or (sy > MAX_LIN_STIFFNESS) or (sz > MAX_LIN_STIFFNESS):
+            raise Exception('stiffness {0} too high!'.format(stiffness))
+        else:
+            self.last_t = t
+            self.control.addTrajectoryPoint(x, y, z,
+                                            ox, oy, oz, ow,
+                                            sx, sy, sz,
+                                            MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS,
+                                            False, False, False,
+                                            False, False, False,
+                                            t,
+                                            '/torso_lift_link')
+
+    def add_force_goal(self, pt, stiffness, orientation, t):
         """
         pt: set point x,y,z in /torso_lift_link frame
         force: force/stiffness in x,y,z
         orientation: set orientation ox,oy,oz,ow in /torso_lift_link frame
         t: goal time
         """
+        x, y, z = pt
+        ox, oy, oz, ow = orientation
+        fx, sy, sz = stiffness
+
         if t <= self.last_t:
             raise Exception('time ({0}) must be later than the last time ({1}) in the trajectory'.format(t, self.last_t))
-        # else if not self.stiffness_control:
-        #     if
+        elif (sy > MAX_LIN_STIFFNESS) or (sz > MAX_LIN_STIFFNESS):
+            raise Exception('stiffness {0} too high!'.format(stiffness))
+        elif (fx > MAX_LIN_FORCE):
+            raise Exception('force {0} too high!'.format(fx))
         else:
             self.last_t = t
-            x, y, z = pt
-            ox, oy, oz, ow = orientation
-            fx, fy, fz = force
-
-            if (self.stiffness_control):
-                self.control.addTrajectoryPoint(x, y, z,
-                                                ox, oy, oz, ow,
-                                                fx, fy, fz,
-                                                MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS,
-                                                False, False, False,
-                                                False, False, False,
-                                                t,
-                                                '/torso_lift_link')
-            else:
-                self.control.addTrajectoryPoint(x, y, z,
-                                                ox, oy, oz, ow,
-                                                fx, fy, fz,
-                                                MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS,
-                                                True, False, False,
-                                                False, False, False,
-                                                t,
-                                                '/torso_lift_link')
+            self.control.addTrajectoryPoint(x, y, z,
+                                            ox, oy, oz, ow,
+                                            fx, sy, sz,
+                                            MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS, MAX_ROT_STIFFNESS,
+                                            True, False, False,
+                                            False, False, False,
+                                            t,
+                                            '/torso_lift_link')
