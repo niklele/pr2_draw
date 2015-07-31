@@ -60,28 +60,33 @@ def interpolate(path, max_dist):
         interp_pos.append((p0, 0.0)) # first point
 
         distance = la.norm(p1 - p0)
+        # try:
         direction = (p1 - p0) / distance
+        # except RuntimeWarning as e:
+        #     rospy.logerr("Error: {0}".format(e))
+        #     direction = pt(0,0,0)
         new_p = np.array(p0, copy=True)
 
-        rospy.loginfo("interp step {0} of {1}".format(i+1, len(path)))
-        rospy.loginfo("position interpolation")
+        rospy.loginfo("interp segment {0} of {1}".format(i+1, len(path)-1))
+        # rospy.loginfo("position interpolation")
 
         while True:
-            new_p += step * direction
+            new_p += max_dist * direction
             diff = la.norm(new_p - p0, 2)
             if diff <= distance:
                 interp_pos.append((new_p, diff/distance))
             else:
                 break
 
-        interp_path.append((p1, 1.0)) # last point
+        interp_pos.append((p1, 1.0)) # last point
 
-        rospy.loginfo("orientation interpolation")
+        # rospy.loginfo("orientation interpolation")
         q0 = path[i][1]
         q1 = path[i+1][1]
 
         for pos, fraction in interp_pos:
             new_q = tf.transformations.quaternion_slerp(q0, q1, fraction)
+            # rospy.loginfo("new_q: {0}".format(new_q))
             interp_path.append([pos, new_q])
 
     return interp_path
@@ -89,21 +94,20 @@ def interpolate(path, max_dist):
 def make_square(start_pos, length):
     """create position waypoints to follow a square"""
     path = []
-    path.append([start + pt(0, 0, 0), quat(0, 0, 0, 1)])
-    path.append([start + pt(0, 0, length), quat(0, 0, 0, 1)])
-    path.append([start + pt(0, length, 0), quat(0, 0, 0, 1)])
-    path.append([start + pt(0, length, length), quat(0, 0, 0, 1)])
-    path.append([start + pt(0, 0, length), quat(0, 0, 0, 1)])
-    path.append([start + pt(0, 0, 0), quat(0, 0, 0, 1)])
-    path.append([start + pt(0, 0, 0), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, 0, 0), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, 0, length), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, length, length), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, length, 0), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, 0, 0), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, 0, 0), quat(0, 0, 0, 1)])
     return path
 
 def make_line(start_pos, length):
     """create position waypoints to follow a line"""
     path = []
-    path.append([start + pt(0, 0, 0), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, 0, 0), quat(0, 0, 0, 1)])
     # path.append([start + pt(0, length/2, 0), quat(0, 0, 0, 1)])
-    path.append([start + pt(0, length, 0), quat(0, 0, 0, 1)])
+    path.append([start_pos + pt(0, length, 0), quat(0, 0, 0, 1)])
     return path
 
 if __name__ == '__main__':
@@ -118,18 +122,25 @@ if __name__ == '__main__':
 
     start_pos = []
     while not start_pos:
-        start_pos = draw_control.curr_pos + start_offset
+        start_pos = draw_control.curr_pos
+
+    start_pos += start_offset
     rospy.loginfo("Calculating line starting at {0}".format(start_pos))
 
-    line = make_line(start_pos, 0.2)
-    line_orientations = calc_path_orientations(line)
-    line_orientations_interp = interpolate(line_orientations, 0.01) # 1 cm max step
+    # path = make_line(start_pos, 0.2)
+
+    path = make_square(start_pos, 0.15)
+
+    path_orientations = calc_path_orientations(path)
+    path_orientations_interp = interpolate(path_orientations, 0.01) # 1 cm max step
+
+    # rospy.loginfo("interpolated path:\n{0}".format(line_orientations_interp))
 
     # Send the path
     draw_control.add_home_goal()
-    draw_control.add_path_goals(line_orientations_interp, 100)
+    draw_control.add_path_goals(path_orientations_interp, 100)
     draw_control.add_home_goal()
     rospy.loginfo("Sending Goal Trajectory")
     draw_control.send()
 
-    rospy.spin()
+    # rospy.spin()

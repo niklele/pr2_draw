@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import roslib; roslib.load_manifest('ee_cart_imped_tutorial')
+import roslib; roslib.load_manifest('pr2_draw')
 import rospy
 import ee_cart_imped_action
 
@@ -16,5 +16,6 @@ def main():
     control.sendGoal()
 
 if __name__ == '__main__':
-    rospy.init_node('force_control_test')
-    main()
+    # rospy.init_node('force_control_test')
+    # main()
+    print 'disabled'

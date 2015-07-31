@@ -3,6 +3,7 @@ import roslib; roslib.load_manifest('pr2_draw')
 import rospy
 import geometry_msgs
 import ee_cart_imped_action
+import tf
 
 import numpy as np
 import numpy.linalg as la
@@ -22,12 +23,13 @@ class DrawController(object):
         self.curr_orientation = []
         self.t = 5 # trajectory time starts ahead for a safety delay
 
+        self.home_pos = [0.75, 0, 0] # in /torso_lift_link
+        self.home_orientation = tf.transformations.quaternion_from_euler(0, -np.pi/6, 0) # roll, pitch, yaw
+
         self.last_pos_cmd = self.home_pos
         self.last_orientation_cmd = [0,0,0,1]
         self.last_t = 0 # ensure that time stamps move forward
 
-        self.home_pos = [0.75, 0, 0] # in /torso_lift_link
-        self.home_orientation = tf.transformations.quaternion_from_euler(0, -np.pi/6, 0) # roll, pitch, yaw
 
         self.vel = 0.015 # not actual velocity because it is based on commanded position, not actual
         self.rot_vel = np.pi/2 # radians/s
@@ -40,7 +42,8 @@ class DrawController(object):
     def add_path_goals(self, path, stiffness):
         """send a path specified as a list of [position, orientation] with a given stiffness"""
         for position, orientation in path:
-            self.move(position, orientation, stiffness)
+            # rospy.loginfo("Adding goal pos:{0} orientation:{1}".format(position, orientation))
+            self.add_move_goal(position, orientation, stiffness)
 
     def add_move_goal(self, pos, orientation, sx=MAX_LIN_STIFFNESS):
         """add a goal to move to the position and orientation with stiffness sx in x-axis
@@ -50,9 +53,13 @@ class DrawController(object):
 
         # calc time to travel based on spatial and rotational velocity
         dt_translate = la.norm(np.array(pos) - np.array(self.last_pos_cmd)) / self.vel
-        dt_rotate = 2 * np.arccos(np.dot(self.last_orientation_cmd, orientation)) / self.rot_vel
 
-        dt += max(dt_translate, dt_rotate) + 0.1 # add 100 ms delay to all commands
+        # TODO fix math
+        dt_rotate = la.norm(2 * np.arccos(np.dot(self.last_orientation_cmd, orientation))) / self.rot_vel
+
+        # rospy.loginfo("dt_translate: {0}, dt_rotate: {1}".format(dt_translate, dt_rotate))
+
+        dt = max(dt_translate, dt_rotate) + 0.1 # add 100 ms delay to all commands
 
         # add a goal
         self.add_stiff_goal(pos,
@@ -75,14 +82,14 @@ class DrawController(object):
 
     def add_home_goal(self):
         """add goal to home near whiteboard"""
-        self.move(self.home_pos, [0,0,0,1], 50)
+        self.add_move_goal(self.home_pos, [0,0,0,1], 50)
 
     def send(self):
         """wrap ee_cart_imped_action sendGoal"""
         self.control.sendGoal()
 
     def add_goal(self, pt, stiffness, orientation, t):
-        return self.add_stiff_goal(pt, stiffness=, orientation, t)
+        return self.add_stiff_goal(pt, stiffness, orientation, t)
 
     def add_stiff_goal(self, pt, stiffness, orientation, t):
         """

@@ -15,3 +15,6 @@ if __name__ == '__main__':
     draw_control.add_home_goal()
 
     draw_control.send()
+
+    # while True:
+    #     rospy.loginfo("curr pos: {0}\ncurr orientation: {1}".format(draw_control.curr_pos, draw_control.curr_orientation))
